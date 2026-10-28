@@ -13,6 +13,7 @@ from config.inference_config import InferenceConfig
 from model.embeddings.embedding_layer import EmbeddingLayer
 from model.blocks.block_stack import BlockStack
 from model.heads.lm_head import LMHead
+from model.heads.weight_tying import tie_weights
 
 from inference.sampling.sampler import Sampler
 
@@ -29,14 +30,18 @@ class FullTransformerModel(nn.Module):
         super().__init__()
 
         self.config = config if config is not None else ModelConfig()
+        self.num_layers = self.config.n_layers
 
         self.embeddings = EmbeddingLayer(config=self.config)
         self.blocks = BlockStack(config=self.config)
         self.lm_head = LMHead(config=self.config)
+        if getattr(self.config, "tie_weights", False):
+            tie_weights(self.lm_head, self.embeddings.token_embedding)
 
     def forward(
         self,
         input_ids: torch.Tensor,
+        offset: int = 0,
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -46,7 +51,7 @@ class FullTransformerModel(nn.Module):
         Returns:
             Logits of shape (batch_size, sequence_length, vocab_size).
         """
-        hidden_states = self.embeddings(input_ids)
+        hidden_states = self.embeddings(input_ids, offset=offset)
         hidden_states = self.blocks(hidden_states, **kwargs)
 
         return self.lm_head(hidden_states)
